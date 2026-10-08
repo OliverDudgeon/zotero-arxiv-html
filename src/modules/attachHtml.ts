@@ -7,7 +7,8 @@ import {
   parseArxivId,
   parseHtmlLink,
 } from "./arxiv";
-import { fixSnapshotStyles } from "./snapshot";
+import { fetchText, zoteroFetchers } from "./fetch";
+import { buildSnapshot } from "./snapshot";
 import { getString } from "../utils/locale";
 
 // arXiv asks for one request at a time with a pause between them
@@ -128,10 +129,7 @@ async function attachHtml(
     // Ask the abstract page for the latest version; it only links to the
     // HTML when arXiv has one
     await waitForTurn();
-    const xhr = await Zotero.HTTP.request("GET", buildAbsUrl(ref.id), {
-      responseType: "text",
-    });
-    target = parseHtmlLink(xhr.response as string);
+    target = parseHtmlLink(await fetchText(buildAbsUrl(ref.id)));
     if (!target) {
       return { kind: "no-html" };
     }
@@ -139,17 +137,9 @@ async function attachHtml(
 
   await waitForTurn();
   const url = buildHtmlUrl(target);
-  let attachment: Zotero.Item;
+  let page: string;
   try {
-    attachment = await Zotero.Attachments.importFromURL({
-      libraryID: item.libraryID,
-      parentItemID: item.id,
-      url,
-      title: target.version
-        ? getString("attachment-title", { args: { version: target.version } })
-        : getString("attachment-title-latest"),
-      contentType: "text/html",
-    });
+    page = await fetchText(url);
   } catch (e) {
     // Zotero.HTTP.UnexpectedStatusException; arXiv 404s when there's no HTML
     if ((e as { status?: number })?.status === 404) {
@@ -157,12 +147,19 @@ async function attachHtml(
     }
     throw e;
   }
-  try {
-    await fixSnapshotStyles(attachment, url);
-  } catch (e) {
-    // The snapshot is still readable, just unstyled
-    Zotero.debug(`[arXiv HTML] Couldn't inline styles for ${url}: ${e}`);
-  }
+  await Zotero.Attachments.importFromSnapshotContent({
+    url,
+    snapshotContent: await buildSnapshot(
+      page,
+      url,
+      zoteroFetchers,
+      Zotero.getMainWindow(),
+    ),
+    parentItemID: item.id,
+    title: target.version
+      ? getString("attachment-title", { args: { version: target.version } })
+      : getString("attachment-title-latest"),
+  });
   return { kind: "attached", version: target.version };
 }
 

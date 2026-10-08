@@ -1,5 +1,5 @@
 import { assert } from "chai";
-import { Fetchers, inlineSnapshotImports } from "../src/modules/css";
+import { darkModeRules, Fetchers, inlineImports } from "../src/modules/css";
 
 describe("css", function () {
   const files: Record<string, string> = {
@@ -27,38 +27,50 @@ describe("css", function () {
     fetched = [];
   });
 
-  describe("inlineSnapshotImports", function () {
+  describe("inlineImports", function () {
     it("inlines layered imports and embeds their fonts", async function () {
-      const html = `<style>@import "/static/a.css" layer(ar5iv);\n@layer ar5iv;</style>`;
+      const css = `@import "/static/a.css" layer(ar5iv);\n@layer ar5iv;`;
       assert.equal(
-        await inlineSnapshotImports(html, page, fetchers),
-        `<style>@layer ar5iv {\n@font-face{src:url("data:font/woff2;base64,${"https://arxiv.org/static/f.woff2".length}")}.ltx_a{color:red}\n}\n@layer ar5iv;</style>`,
+        await inlineImports(css, page, fetchers),
+        `@layer ar5iv {\n@font-face{src:url("data:font/woff2;base64,${"https://arxiv.org/static/f.woff2".length}")}.ltx_a{color:red}\n}\n@layer ar5iv;`,
       );
     });
 
     it("handles url() imports, anonymous layers and media queries", async function () {
-      const html = `<style>@import url("/static/b.css") layer screen;</style>`;
       assert.equal(
-        await inlineSnapshotImports(html, page, fetchers),
-        `<style>@media screen {\n@layer {\n.b{background:url(data:image/png;base64,AA)}\n}\n}</style>`,
+        await inlineImports(
+          `@import url("/static/b.css") layer screen;`,
+          page,
+          fetchers,
+        ),
+        `@media screen {\n@layer {\n.b{background:url(data:image/png;base64,AA)}\n}\n}`,
       );
       assert.deepEqual(fetched, ["https://arxiv.org/static/b.css"]);
     });
 
     it("resolves nested imports against the stylesheet URL", async function () {
-      const out = await inlineSnapshotImports(
-        `<style>@import "/static/c.css";</style>`,
+      const out = await inlineImports(
+        `@import "/static/c.css";`,
         page,
         fetchers,
       );
       assert.include(out, ".b{background");
       assert.notInclude(out, "@import");
     });
+  });
 
-    it("leaves text outside style blocks alone", async function () {
-      const html = `<p>@import "/static/a.css";</p>`;
-      assert.equal(await inlineSnapshotImports(html, page, fetchers), html);
-      assert.isEmpty(fetched);
+  describe("darkModeRules", function () {
+    it("copies dark theme rules under prefers-color-scheme, in their layer", function () {
+      const out = darkModeRules(
+        `@layer tokens { :root, [data-theme=light] { --bg: white; } [data-theme=dark] { --bg: black; } }
+         .x, [data-theme="dark"] .y { color: red; }`,
+        CSSStyleSheet,
+      );
+      assert.equal(
+        out.replace(/\s+/g, " "),
+        `@layer tokens { @media (prefers-color-scheme: dark) { :root:not([data-theme]) { --bg: black; } } } ` +
+          `@media (prefers-color-scheme: dark) { :root:not([data-theme]) .y { color: red; } }`,
+      );
     });
   });
 });

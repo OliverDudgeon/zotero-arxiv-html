@@ -1,10 +1,8 @@
 /**
- * Inline `@import` rules that Zotero's snapshotter (SingleFile) leaves behind.
- *
- * arXiv's HTML pages load their main stylesheet as
- * `@import "/static/.../ar5iv.css" layer(ar5iv);`, which SingleFile doesn't
- * resolve, so the saved snapshot points at a root-relative URL that doesn't
- * exist offline. Fetching is injected so this module stays testable.
+ * CSS rewriting for self-contained snapshots: inline `@import`s (arXiv loads
+ * its main stylesheet as `@import "..." layer(ar5iv)`), embed `url()`s as
+ * `data:` URIs, and make the page's script-driven dark mode work from CSS.
+ * Fetching is injected so this module stays testable.
  */
 
 export interface Fetchers {
@@ -18,19 +16,7 @@ export interface Fetchers {
 const IMPORT =
   /@import\s+(?:url\(\s*(["']?)([^"')]+)\1\s*\)|(["'])([^"']+)\3)\s*(layer(?:\(\s*([^)\s]+)\s*\))?)?\s*([^;]*);/g;
 const URL_REF = /url\(\s*(["']?)([^"')]+)\1\s*\)/g;
-const STYLE = /(<style\b[^>]*>)([\s\S]*?)(<\/style>)/gi;
 const MAX_DEPTH = 3;
-
-/** Inline the `@import`s in every `<style>` block of a saved HTML page. */
-export async function inlineSnapshotImports(
-  html: string,
-  pageUrl: string,
-  fetchers: Fetchers,
-): Promise<string> {
-  return replaceAsync(html, STYLE, async (_, open, css, close) => {
-    return open + (await inlineImports(css, pageUrl, fetchers)) + close;
-  });
-}
 
 /**
  * Replace each `@import` in `css` with the imported stylesheet wrapped in the
@@ -71,6 +57,77 @@ export async function embedUrls(
     const dataUri = await fetchers.dataUri(new URL(ref, baseUrl).href);
     return `url("${dataUri}")`;
   });
+}
+
+const DARK_THEME = /\[data-theme=(["']?)dark\1\]/g;
+const AUTO_THEME = ":root:not([data-theme])";
+
+/**
+ * arXiv's dark palette applies under `[data-theme=dark]`, an attribute its
+ * scripts set from the system theme. Snapshots can't run scripts, so copy
+ * those rules under `@media (prefers-color-scheme: dark)` for pages without
+ * the attribute. Returns only the new rules, keeping each in its layer.
+ */
+export function darkModeRules(
+  css: string,
+  CSSStyleSheetCtor: typeof CSSStyleSheet,
+): string {
+  const sheet = new CSSStyleSheetCtor();
+  sheet.replaceSync(css);
+  const out: string[] = [];
+  collectDarkRules(sheet.cssRules, [], out);
+  return out.join("\n");
+}
+
+function collectDarkRules(
+  rules: CSSRuleList,
+  wrappers: string[],
+  out: string[],
+) {
+  for (const rule of Array.from(rules)) {
+    if ("selectorText" in rule && "style" in rule) {
+      const styleRule = rule as CSSStyleRule;
+      const selectors = splitSelectors(styleRule.selectorText)
+        .filter((selector) => selector.match(DARK_THEME))
+        .map((selector) => selector.replace(DARK_THEME, AUTO_THEME));
+      if (selectors.length) {
+        let text = `${selectors.join(", ")} { ${styleRule.style.cssText} }`;
+        for (const wrapper of [
+          ...wrappers,
+          "@media (prefers-color-scheme: dark)",
+        ].reverse()) {
+          text = `${wrapper} { ${text} }`;
+        }
+        out.push(text);
+      }
+    } else if ("cssRules" in rule) {
+      // @layer, @media, @supports: keep the prelude so copies cascade the same
+      const prelude = rule.cssText.slice(0, rule.cssText.indexOf("{")).trim();
+      collectDarkRules(
+        (rule as CSSGroupingRule).cssRules,
+        [...wrappers, prelude],
+        out,
+      );
+    }
+  }
+}
+
+/** Split a selector list on top-level commas (not those inside `:is()`). */
+function splitSelectors(selectorText: string): string[] {
+  const selectors: string[] = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < selectorText.length; i++) {
+    const char = selectorText[i];
+    if (char === "(" || char === "[") depth++;
+    else if (char === ")" || char === "]") depth--;
+    else if (char === "," && depth === 0) {
+      selectors.push(selectorText.slice(start, i).trim());
+      start = i + 1;
+    }
+  }
+  selectors.push(selectorText.slice(start).trim());
+  return selectors;
 }
 
 /** `layer` is a layer name, "" for an anonymous layer, or undefined. */

@@ -5,8 +5,8 @@
 The Zotero Connector saves the PDF and abstract page of an arXiv paper, but not
 the [experimental HTML version](https://info.arxiv.org/about/accessible_HTML.html).
 This plugin adds an **Attach arXiv HTML** item context menu entry that saves
-`https://arxiv.org/html/<id>` as a full web page snapshot (figures and styles
-inlined), so it can be read and annotated offline in Zotero's reader.
+`https://arxiv.org/html/<id>` as a self-contained snapshot (stylesheets, fonts
+and figures embedded), so it can be read and annotated offline in Zotero's reader.
 
 Requires Zotero 8–10.
 
@@ -20,6 +20,9 @@ entry only appears when a selected item has an arXiv ID.
 - The HTML is saved at the same version as the item's arXiv PDF attachment when
   one exists; otherwise the latest version is used.
 - Items that already have an arXiv HTML attachment are skipped.
+- Zotero's reader doesn't run page scripts, so arXiv's in-page toggles are
+  removed. The page follows your system light/dark theme, and the contents
+  sidebar shows when the reader is at least 1280px wide.
 - Items are processed one at a time, at most one request every 3 seconds, as
   arXiv asks.
 
