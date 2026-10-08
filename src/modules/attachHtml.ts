@@ -7,6 +7,7 @@ import {
   parseArxivId,
   parseHtmlLink,
 } from "./arxiv";
+import { fixSnapshotStyles } from "./snapshot";
 import { getString } from "../utils/locale";
 
 // arXiv asks for one request at a time with a pause between them
@@ -137,11 +138,13 @@ async function attachHtml(
   }
 
   await waitForTurn();
+  const url = buildHtmlUrl(target);
+  let attachment: Zotero.Item;
   try {
-    await Zotero.Attachments.importFromURL({
+    attachment = await Zotero.Attachments.importFromURL({
       libraryID: item.libraryID,
       parentItemID: item.id,
-      url: buildHtmlUrl(target),
+      url,
       title: target.version
         ? getString("attachment-title", { args: { version: target.version } })
         : getString("attachment-title-latest"),
@@ -153,6 +156,12 @@ async function attachHtml(
       return { kind: "no-html" };
     }
     throw e;
+  }
+  try {
+    await fixSnapshotStyles(attachment, url);
+  } catch (e) {
+    // The snapshot is still readable, just unstyled
+    Zotero.debug(`[arXiv HTML] Couldn't inline styles for ${url}: ${e}`);
   }
   return { kind: "attached", version: target.version };
 }
