@@ -1,0 +1,10 @@
+attachment-title = arXiv HTML (v{ $version })
+progress-title = arXiv HTML
+status-pending = { $title }
+status-attached = { $title }: Attached HTML (v{ $version })
+status-exists = { $title }: Already has HTML
+status-no-id = { $title }: No arXiv ID
+status-no-html = { $title }: No HTML available on arXiv
+status-failed = { $title }: Download failed
+attachment-title-latest = arXiv HTML
+status-attached-latest = { $title }: Attached HTML
