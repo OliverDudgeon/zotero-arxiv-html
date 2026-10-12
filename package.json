@@ -1,7 +1,7 @@
 {
   "name": "zotero-arxiv-html",
   "type": "module",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Attach the arXiv HTML (experimental) version of a paper as a web page snapshot",
   "config": {
     "addonName": "arXiv HTML for Zotero",
